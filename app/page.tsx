@@ -64,24 +64,25 @@ export default function Home() {
   useEffect(() => { localStorage.setItem("mingjufish-worklog", JSON.stringify({ people, rows, schedules })); }, [people, rows, schedules]);
   useEffect(() => { setUnlocked(sessionStorage.getItem("mingjufish-unlocked") === "yes"); }, []);
 
-  const filtered = useMemo(() => {
+  const periodRows = useMemo(() => {
     const now = new Date();
     const cutoff = new Date(now);
     if (range === "今日") cutoff.setHours(0, 0, 0, 0);
     if (range === "本週") { const delta = (now.getDay() + 6) % 7; cutoff.setDate(now.getDate() - delta); cutoff.setHours(0,0,0,0); }
     if (range === "本月") { cutoff.setDate(1); cutoff.setHours(0,0,0,0); }
     if (range === "近三個月") { cutoff.setMonth(now.getMonth() - 2, 1); cutoff.setHours(0,0,0,0); }
-    return rows.filter(r => {
-      const p = people.find(x => x.id === r.personId);
-      return new Date(`${r.date}T12:00:00`) >= cutoff && (personFilter === "全部人員" || p?.name === personFilter) && (!query || p?.name.includes(query) || r.note.includes(query));
-    }).sort((a,b) => b.date.localeCompare(a.date));
-  }, [rows, people, range, personFilter, query]);
+    return rows.filter(r => new Date(`${r.date}T12:00:00`) >= cutoff);
+  }, [rows, range]);
+  const filtered = useMemo(() => periodRows.filter(r => {
+    const p = people.find(x => x.id === r.personId);
+    return (personFilter === "全部人員" || p?.name === personFilter) && (!query || p?.name.includes(query) || r.note.includes(query));
+  }).sort((a,b) => b.date.localeCompare(a.date)), [periodRows, people, personFilter, query]);
 
   const scheduleFor = (r: RecordRow) => schedules.find(s => s.personId === r.personId && s.date === r.date);
   const totalMin = filtered.reduce((sum, r) => sum + workMinutes(r, scheduleFor(r)), 0);
-  const hourlyPayroll = filtered.reduce((sum, r) => { const p = people.find(x => x.id === r.personId); return sum + (p?.role === "正職" ? 0 : workMinutes(r,scheduleFor(r)) / 60 * (p?.rate || 0)); }, 0);
+  const hourlyPayroll = periodRows.reduce((sum, r) => { const p = people.find(x => x.id === r.personId); return sum + (p?.role === "正職" ? 0 : workMinutes(r,scheduleFor(r)) / 60 * (p?.rate || 0)); }, 0);
   const salaryMonths = range === "近三個月" ? 3 : range === "本月" ? 1 : 0;
-  const fixedPayroll = salaryMonths * people.filter(p => p.role === "正職" && (personFilter === "全部人員" || p.name === personFilter)).reduce((sum,p)=>sum+p.monthlySalary,0);
+  const fixedPayroll = salaryMonths * people.filter(p => p.role === "正職").reduce((sum,p)=>sum+p.monthlySalary,0);
   const payroll = hourlyPayroll + fixedPayroll;
   const pending = filtered.filter(r => !r.confirmed).length;
 
@@ -140,7 +141,7 @@ export default function Home() {
 
     {showPerson&&<Modal title={editPerson?"編輯人員":"新增人員"} close={()=>{setShowPerson(false);setEditPerson(null)}}><PersonForm initial={editPerson||undefined} onSave={p=>{if(editPerson)setPeople(people.map(x=>x.id===editPerson.id?{...p,id:editPerson.id}:x));else setPeople([...people,{...p,id:Date.now()}]);setShowPerson(false);setEditPerson(null)}} /></Modal>}
     {showSchedule&&<Modal title="設定每日排班" close={()=>{setShowSchedule(false);setEditing(null)}}><DailyScheduleForm people={people} initialPersonId={editing?.id} schedules={schedules} onSave={s=>{const old=schedules.find(x=>x.personId===s.personId&&x.date===s.date);setSchedules(old?schedules.map(x=>x.id===old.id?{...s,id:old.id}:x):[...schedules,{...s,id:Date.now()}]);setShowSchedule(false);setEditing(null)}} /></Modal>}
-    {showRecord&&<Modal title="新增出勤紀錄" close={()=>setShowRecord(false)}><RecordForm people={people} schedules={schedules} onSave={r=>{setRows([...rows,{...r,id:Date.now(),confirmed:false}]);setShowRecord(false)}} /></Modal>}
+    {showRecord&&<Modal title="新增出勤紀錄" close={()=>setShowRecord(false)}><RecordForm people={people} schedules={schedules} onSave={r=>{setRows([...rows,{...r,id:Date.now(),confirmed:false}]);setRange("今日");setPersonFilter("全部人員");setQuery("");setShowRecord(false)}} /></Modal>}
   </main>;
 }
 
