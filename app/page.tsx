@@ -52,12 +52,16 @@ export default function Home() {
   const [showSchedule, setShowSchedule] = useState(false);
   const [showRecord, setShowRecord] = useState(false);
   const [editing, setEditing] = useState<Person | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem("mingjufish-worklog");
     if (saved) { try { const data = JSON.parse(saved); setPeople(data.people || seedPeople); setRows(data.rows || seedRows); setSchedules(data.schedules || seedSchedules); } catch {} }
   }, []);
   useEffect(() => { localStorage.setItem("mingjufish-worklog", JSON.stringify({ people, rows, schedules })); }, [people, rows, schedules]);
+  useEffect(() => { setUnlocked(sessionStorage.getItem("mingjufish-unlocked") === "yes"); }, []);
 
   const filtered = useMemo(() => {
     const now = new Date();
@@ -82,6 +86,16 @@ export default function Home() {
     const blob = new Blob(["\ufeff" + lines.map(x=>x.map(v=>`\"${String(v).replaceAll('"','""')}\"`).join(",")).join("\n")], {type:"text/csv;charset=utf-8"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`名桔鮮魚湯_工時_${iso(today)}.csv`; a.click(); URL.revokeObjectURL(a.href);
   }
+
+  async function unlock(e: React.FormEvent) {
+    e.preventDefault();
+    const data = new TextEncoder().encode(password);
+    const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", data))).map(b => b.toString(16).padStart(2,"0")).join("");
+    if (digest === "5e16c42acc61f7d814b586173a75c7aaab29a278ad7dcc103330c77430210614") { sessionStorage.setItem("mingjufish-unlocked","yes"); setUnlocked(true); setLoginError(false); }
+    else { setLoginError(true); setPassword(""); }
+  }
+
+  if (!unlocked) return <main className="login-page"><section className="login-card"><div className="logo login-logo">桔</div><span className="eyebrow">MINGJU WORKLOG</span><h1>名桔鮮魚湯</h1><p>工時核對與薪資試算</p><form onSubmit={unlock}><label>管理密碼<input autoFocus type="password" inputMode="numeric" required value={password} onChange={e=>{setPassword(e.target.value);setLoginError(false)}} placeholder="請輸入密碼" /></label>{loginError&&<span className="login-error">密碼不正確，請重新輸入</span>}<button className="primary submit">進入工時管理</button></form><small>僅供授權管理人員使用</small></section></main>;
 
   return <main>
     <header>
