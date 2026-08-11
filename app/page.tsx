@@ -1,0 +1,128 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+type Person = { id: number; name: string; role: string; rate: number; start: string; end: string };
+type RecordRow = { id: number; personId: number; date: string; clockIn: string; clockOut: string; breakMin: number; type: string; note: string; confirmed: boolean };
+type DailySchedule = { id: number; personId: number; date: string; start: string; end: string };
+
+const seedPeople: Person[] = [
+  { id: 1, name: "林怡君", role: "正職", rate: 200, start: "09:30", end: "18:30" },
+  { id: 2, name: "陳柏宇", role: "計時", rate: 190, start: "11:00", end: "20:00" },
+  { id: 3, name: "王雅婷", role: "計時", rate: 190, start: "17:00", end: "22:00" },
+];
+
+const today = new Date();
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const day = (offset: number) => { const d = new Date(today); d.setDate(d.getDate() + offset); return iso(d); };
+const seedRows: RecordRow[] = [
+  { id: 1, personId: 1, date: day(0), clockIn: "09:28", clockOut: "18:36", breakMin: 60, type: "正常", note: "", confirmed: true },
+  { id: 2, personId: 2, date: day(0), clockIn: "10:52", clockOut: "20:05", breakMin: 45, type: "正常", note: "備料", confirmed: false },
+  { id: 3, personId: 3, date: day(-1), clockIn: "17:08", clockOut: "22:14", breakMin: 15, type: "正常", note: "", confirmed: true },
+  { id: 4, personId: 1, date: day(-1), clockIn: "09:31", clockOut: "18:30", breakMin: 60, type: "正常", note: "", confirmed: true },
+  { id: 5, personId: 2, date: day(-3), clockIn: "11:03", clockOut: "20:18", breakMin: 45, type: "正常", note: "盤點", confirmed: true },
+];
+const seedSchedules: DailySchedule[] = [
+  { id: 1, personId: 1, date: day(0), start: "09:30", end: "18:30" },
+  { id: 2, personId: 2, date: day(0), start: "11:00", end: "20:00" },
+  { id: 3, personId: 3, date: day(-1), start: "17:00", end: "22:00" },
+  { id: 4, personId: 1, date: day(-1), start: "09:30", end: "18:30" },
+  { id: 5, personId: 2, date: day(-3), start: "11:00", end: "20:00" },
+];
+
+function minutes(t: string) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
+function workMinutes(row: RecordRow, schedule?: DailySchedule) {
+  if (!schedule || !row.clockIn || !row.clockOut || row.type !== "正常") return 0;
+  const start = Math.max(minutes(row.clockIn), minutes(schedule.start));
+  const end = Math.min(minutes(row.clockOut), minutes(schedule.end));
+  return Math.max(0, end - start);
+}
+function fmtHours(min: number) { return `${(min / 60).toFixed(2)} 小時`; }
+function weekday(date: string) { return ["日", "一", "二", "三", "四", "五", "六"][new Date(`${date}T12:00:00`).getDay()]; }
+function money(n: number) { return `NT$ ${Math.round(n).toLocaleString("zh-TW")}`; }
+
+export default function Home() {
+  const [people, setPeople] = useState<Person[]>(seedPeople);
+  const [rows, setRows] = useState<RecordRow[]>(seedRows);
+  const [schedules, setSchedules] = useState<DailySchedule[]>(seedSchedules);
+  const [range, setRange] = useState("本月");
+  const [query, setQuery] = useState("");
+  const [personFilter, setPersonFilter] = useState("全部人員");
+  const [showPerson, setShowPerson] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [showRecord, setShowRecord] = useState(false);
+  const [editing, setEditing] = useState<Person | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("mingjufish-worklog");
+    if (saved) { try { const data = JSON.parse(saved); setPeople(data.people || seedPeople); setRows(data.rows || seedRows); setSchedules(data.schedules || seedSchedules); } catch {} }
+  }, []);
+  useEffect(() => { localStorage.setItem("mingjufish-worklog", JSON.stringify({ people, rows, schedules })); }, [people, rows, schedules]);
+
+  const filtered = useMemo(() => {
+    const now = new Date();
+    const cutoff = new Date(now);
+    if (range === "今日") cutoff.setHours(0, 0, 0, 0);
+    if (range === "本週") { const delta = (now.getDay() + 6) % 7; cutoff.setDate(now.getDate() - delta); cutoff.setHours(0,0,0,0); }
+    if (range === "本月") { cutoff.setDate(1); cutoff.setHours(0,0,0,0); }
+    if (range === "近三個月") { cutoff.setMonth(now.getMonth() - 2, 1); cutoff.setHours(0,0,0,0); }
+    return rows.filter(r => {
+      const p = people.find(x => x.id === r.personId);
+      return new Date(`${r.date}T12:00:00`) >= cutoff && (personFilter === "全部人員" || p?.name === personFilter) && (!query || p?.name.includes(query) || r.note.includes(query));
+    }).sort((a,b) => b.date.localeCompare(a.date));
+  }, [rows, people, range, personFilter, query]);
+
+  const scheduleFor = (r: RecordRow) => schedules.find(s => s.personId === r.personId && s.date === r.date);
+  const totalMin = filtered.reduce((sum, r) => sum + workMinutes(r, scheduleFor(r)), 0);
+  const payroll = filtered.reduce((sum, r) => { const p = people.find(x => x.id === r.personId); return sum + workMinutes(r,scheduleFor(r)) / 60 * (p?.rate || 0); }, 0);
+  const pending = filtered.filter(r => !r.confirmed).length;
+
+  function exportCsv() {
+    const lines = [["日期","星期","姓名","身分","每日排班","打卡上班","打卡下班","計薪工時","時薪","預估薪資","狀態","備註"], ...filtered.map(r => { const p = people.find(x=>x.id===r.personId)!; const s=scheduleFor(r); const wm=workMinutes(r,s); return [r.date,`星期${weekday(r.date)}`,p.name,p.role,s?`${s.start}-${s.end}`:"未排班",r.clockIn,r.clockOut,(wm/60).toFixed(2),p.rate,Math.round(wm/60*p.rate),r.confirmed?"已核對":"待核對",r.note]; })];
+    const blob = new Blob(["\ufeff" + lines.map(x=>x.map(v=>`\"${String(v).replaceAll('"','""')}\"`).join(",")).join("\n")], {type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`名桔鮮魚湯_工時_${iso(today)}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  }
+
+  return <main>
+    <header>
+      <div className="brand"><div className="logo">桔</div><div><h1>名桔鮮魚湯</h1><p>工時核對與薪資試算</p></div></div>
+      <div className="header-actions"><span className="saved"><i />資料已自動儲存</span><button className="outline" onClick={exportCsv}>↓ 匯出 CSV</button><button className="primary" onClick={()=>setShowPerson(true)}>＋ 新增人員</button></div>
+    </header>
+
+    <section className="hero">
+      <div><span className="eyebrow">WORKFORCE OVERVIEW</span><h2>早安，今天也辛苦了。</h2><p>快速核對出勤、工時與預估薪資，所有資料都在這一頁。</p></div>
+      <div className="date-card"><span>{today.toLocaleDateString("zh-TW",{year:"numeric",month:"long"})}</span><strong>{String(today.getDate()).padStart(2,"0")}</strong><b>星期{weekday(iso(today))}</b></div>
+    </section>
+
+    <section className="stats">
+      <article><span>篩選總工時</span><strong>{fmtHours(totalMin)}</strong><small>依排班上限自動計算</small></article>
+      <article><span>預估薪資</span><strong>{money(payroll)}</strong><small>工時 × 個人時薪</small></article>
+      <article><span>待核對紀錄</span><strong className={pending ? "orange":""}>{pending} 筆</strong><small>請確認異常或未核對項目</small></article>
+      <article><span>目前人員</span><strong>{people.length} 人</strong><small>{people.filter(p=>p.role==="正職").length} 位正職 · {people.filter(p=>p.role!=="正職").length} 位計時</small></article>
+    </section>
+
+    <section className="workspace">
+      <div className="toolbar">
+        <div className="tabs">{["今日","本週","本月","近三個月"].map(x=><button key={x} className={range===x?"active":""} onClick={()=>setRange(x)}>{x}</button>)}</div>
+        <div className="filters"><input aria-label="搜尋" placeholder="搜尋姓名或備註..." value={query} onChange={e=>setQuery(e.target.value)}/><select value={personFilter} onChange={e=>setPersonFilter(e.target.value)}><option>全部人員</option>{people.map(p=><option key={p.id}>{p.name}</option>)}</select><button className="outline" onClick={()=>setShowSchedule(true)}>⚙ 排班設定</button><button className="primary" onClick={()=>setShowRecord(true)}>＋ 新增紀錄</button></div>
+      </div>
+      <div className="table-wrap"><table><thead><tr><th>日期</th><th>人員</th><th>身分</th><th>計薪排班</th><th>打卡時間</th><th>計薪工時</th><th>預估薪資</th><th>核對狀態</th><th>備註</th></tr></thead><tbody>
+        {filtered.map(r=>{const p=people.find(x=>x.id===r.personId)!;const s=scheduleFor(r);const wm=workMinutes(r,s);return <tr key={r.id}><td><b>{r.date.slice(5).replace("-","/")}</b><small>星期{weekday(r.date)}</small></td><td><span className="avatar">{p.name[0]}</span><b>{p.name}</b></td><td><span className="tag">{p.role}</span></td><td>{s?<>{s.start}–{s.end}</>:<span className="warn">未設定</span>}</td><td><b>{r.clockIn}–{r.clockOut}</b>{s&&(minutes(r.clockIn)<minutes(s.start)||minutes(r.clockOut)>minutes(s.end))&&<small className="warn">超出排班不計薪</small>}</td><td><b>{fmtHours(wm)}</b></td><td><b>{money(wm/60*p.rate)}</b><small>時薪 {p.rate}</small></td><td><button className={r.confirmed?"status ok":"status"} onClick={()=>setRows(rows.map(x=>x.id===r.id?{...x,confirmed:!x.confirmed}:x))}>{r.confirmed?"✓ 已核對":"! 待核對"}</button></td><td>{r.note||"—"}</td></tr>})}
+        {!filtered.length&&<tr><td colSpan={9} className="empty">此期間沒有符合條件的紀錄</td></tr>}
+      </tbody></table></div>
+      <div className="table-footer"><span>共 {filtered.length} 筆紀錄 · 計薪以個人排班時段為上限</span><b>總計 {fmtHours(totalMin)}　{money(payroll)}</b></div>
+    </section>
+
+    <section className="people-section"><div className="section-title"><div><span className="eyebrow">TEAM & SCHEDULE</span><h3>人員與每日排班</h3></div><button className="text-btn" onClick={()=>setShowSchedule(true)}>設定每日排班 →</button></div><div className="people-grid">{people.map(p=>{const s=schedules.find(x=>x.personId===p.id&&x.date===iso(today));return <article key={p.id}><div className="person-head"><span className="avatar large">{p.name[0]}</span><div><b>{p.name}</b><small>{p.role} · 時薪 {money(p.rate)}</small></div><button onClick={()=>{setEditing(p);setShowSchedule(true)}}>•••</button></div><div className="schedule"><span>今日排班</span><strong>{s?`${s.start} — ${s.end}`:"今日未排班"}</strong></div></article>})}</div></section>
+    <footer><b>名桔鮮魚湯 · 工時管理</b><span>計算結果僅供核對；實際薪資請依勞動契約、加班與休假規定結算。</span></footer>
+
+    {showPerson&&<Modal title="新增人員" close={()=>setShowPerson(false)}><PersonForm onSave={p=>{setPeople([...people,{...p,id:Date.now()}]);setShowPerson(false)}} /></Modal>}
+    {showSchedule&&<Modal title="設定每日排班" close={()=>{setShowSchedule(false);setEditing(null)}}><DailyScheduleForm people={people} initialPersonId={editing?.id} schedules={schedules} onSave={s=>{const old=schedules.find(x=>x.personId===s.personId&&x.date===s.date);setSchedules(old?schedules.map(x=>x.id===old.id?{...s,id:old.id}:x):[...schedules,{...s,id:Date.now()}]);setShowSchedule(false);setEditing(null)}} /></Modal>}
+    {showRecord&&<Modal title="新增出勤紀錄" close={()=>setShowRecord(false)}><RecordForm people={people} schedules={schedules} onSave={r=>{setRows([...rows,{...r,id:Date.now(),confirmed:false}]);setShowRecord(false)}} /></Modal>}
+  </main>;
+}
+
+function Modal({title,close,children}:{title:string;close:()=>void;children:React.ReactNode}) { return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)close()}}><div className="modal"><div className="modal-title"><h3>{title}</h3><button onClick={close}>×</button></div>{children}</div></div>; }
+function PersonForm({initial,onSave}:{initial?:Person;onSave:(p:Omit<Person,"id">)=>void}) { const [v,setV]=useState({name:initial?.name||"",role:initial?.role||"計時",rate:initial?.rate||190,start:"09:00",end:"18:00"}); return <form onSubmit={e=>{e.preventDefault();onSave(v)}}><label>姓名<input required value={v.name} onChange={e=>setV({...v,name:e.target.value})} placeholder="請輸入姓名"/></label><div className="form-row"><label>人員身分<select value={v.role} onChange={e=>setV({...v,role:e.target.value})}><option>正職</option><option>計時</option></select></label><label>時薪（NT$）<input type="number" min="0" value={v.rate} onChange={e=>setV({...v,rate:+e.target.value})}/></label></div><p className="hint">新增後請到「每日排班」設定每天的上、下班時間。</p><button className="primary submit">儲存人員</button></form>; }
+function DailyScheduleForm({people,initialPersonId,schedules,onSave}:{people:Person[];initialPersonId?:number;schedules:DailySchedule[];onSave:(s:Omit<DailySchedule,"id">)=>void}) { const [v,setV]=useState({personId:initialPersonId||people[0]?.id||0,date:iso(today),start:"09:00",end:"18:00"}); useEffect(()=>{const s=schedules.find(x=>x.personId===v.personId&&x.date===v.date);if(s)setV(o=>({...o,start:s.start,end:s.end}))},[v.personId,v.date,schedules]); return <form onSubmit={e=>{e.preventDefault();onSave(v)}}><label>人員<select value={v.personId} onChange={e=>setV({...v,personId:+e.target.value})}>{people.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label><label>排班日期<input type="date" value={v.date} onChange={e=>setV({...v,date:e.target.value})}/></label><div className="form-row"><label>排班上班<input type="time" value={v.start} onChange={e=>setV({...v,start:e.target.value})}/></label><label>排班下班<input type="time" value={v.end} onChange={e=>setV({...v,end:e.target.value})}/></label></div><p className="hint">每個人、每一天都可設定不同時間；超出當天排班的打卡時間不計薪。</p><button className="primary submit">儲存每日排班</button></form>; }
+function RecordForm({people,schedules,onSave}:{people:Person[];schedules:DailySchedule[];onSave:(r:Omit<RecordRow,"id"|"confirmed">)=>void}) { const [v,setV]=useState({personId:people[0]?.id||0,date:iso(today),clockIn:"09:00",clockOut:"18:00",breakMin:0,type:"正常",note:""}); useEffect(()=>{const s=schedules.find(x=>x.personId===v.personId&&x.date===v.date);if(s)setV(o=>({...o,clockIn:s.start,clockOut:s.end}))},[v.personId,v.date,schedules]);return <form onSubmit={e=>{e.preventDefault();onSave(v)}}><label>人員<select value={v.personId} onChange={e=>setV({...v,personId:+e.target.value})}>{people.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></label><div className="form-row"><label>日期<input type="date" value={v.date} onChange={e=>setV({...v,date:e.target.value})}/></label><label>出勤類型<select value={v.type} onChange={e=>setV({...v,type:e.target.value})}><option>正常</option><option>特休</option><option>事假</option><option>病假</option><option>公休</option></select></label></div><div className="form-row"><label>打卡上班<input type="time" value={v.clockIn} onChange={e=>setV({...v,clockIn:e.target.value})}/></label><label>打卡下班<input type="time" value={v.clockOut} onChange={e=>setV({...v,clockOut:e.target.value})}/></label></div><label>備註<input value={v.note} onChange={e=>setV({...v,note:e.target.value})} placeholder="如：盤點、支援外場"/></label><button className="primary submit">新增紀錄</button></form>;}
