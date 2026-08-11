@@ -45,7 +45,7 @@ export default function Home() {
   const [people, setPeople] = useState<Person[]>(seedPeople);
   const [rows, setRows] = useState<RecordRow[]>(seedRows);
   const [schedules, setSchedules] = useState<DailySchedule[]>(seedSchedules);
-  const [range, setRange] = useState("本月");
+  const [range, setRange] = useState("今日");
   const [query, setQuery] = useState("");
   const [personFilter, setPersonFilter] = useState("全部人員");
   const [showPerson, setShowPerson] = useState(false);
@@ -82,9 +82,13 @@ export default function Home() {
   const pending = filtered.filter(r => !r.confirmed).length;
 
   function exportCsv() {
-    const lines = [["日期","星期","姓名","身分","每日排班","打卡上班","打卡下班","計薪工時","時薪","預估薪資","狀態","備註"], ...filtered.map(r => { const p = people.find(x=>x.id===r.personId)!; const s=scheduleFor(r); const wm=workMinutes(r,s); return [r.date,`星期${weekday(r.date)}`,p.name,p.role,s?`${s.start}-${s.end}`:"未排班",r.clockIn,r.clockOut,(wm/60).toFixed(2),p.rate,Math.round(wm/60*p.rate),r.confirmed?"已核對":"待核對",r.note]; })];
-    const blob = new Blob(["\ufeff" + lines.map(x=>x.map(v=>`\"${String(v).replaceAll('"','""')}\"`).join(",")).join("\n")], {type:"text/csv;charset=utf-8"});
-    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`名桔鮮魚湯_工時_${iso(today)}.csv`; a.click(); URL.revokeObjectURL(a.href);
+    const exportPeople = personFilter === "全部人員" ? people.filter(p=>filtered.some(r=>r.personId===p.id)) : people.filter(p=>p.name===personFilter);
+    exportPeople.forEach((person,index) => setTimeout(() => {
+      const personRows = filtered.filter(r=>r.personId===person.id);
+      const lines = [["日期","星期","姓名","身分","每日排班","打卡上班","打卡下班","計薪工時","時薪","預估薪資","狀態","備註"], ...personRows.map(r => { const s=scheduleFor(r); const wm=workMinutes(r,s); return [r.date,`星期${weekday(r.date)}`,person.name,person.role,s?`${s.start}-${s.end}`:"未排班",r.clockIn,r.clockOut,(wm/60).toFixed(2),person.rate,Math.round(wm/60*person.rate),r.confirmed?"已核對":"待核對",r.note]; })];
+      const blob = new Blob(["\ufeff" + lines.map(x=>x.map(v=>`\"${String(v).replaceAll('"','""')}\"`).join(",")).join("\n")], {type:"text/csv;charset=utf-8"});
+      const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`名桔鮮魚湯_${person.name}_${range}_${iso(today)}.csv`; a.click(); URL.revokeObjectURL(a.href);
+    }, index*250));
   }
 
   async function unlock(e: React.FormEvent) {
@@ -100,7 +104,7 @@ export default function Home() {
   return <main>
     <header>
       <div className="brand"><div className="logo">桔</div><div><h1>名桔鮮魚湯</h1><p>工時核對與薪資試算</p></div></div>
-      <div className="header-actions"><span className="saved"><i />資料已自動儲存</span><button className="outline" onClick={exportCsv}>↓ 匯出 CSV</button><button className="primary" onClick={()=>setShowPerson(true)}>＋ 新增人員</button></div>
+      <div className="header-actions"><span className="saved"><i />資料已自動儲存</span><button className="outline" onClick={exportCsv}>↓ 分人匯出 CSV</button><button className="primary" onClick={()=>setShowPerson(true)}>＋ 新增人員</button></div>
     </header>
 
     <section className="hero">
@@ -117,8 +121,8 @@ export default function Home() {
 
     <section className="workspace">
       <div className="toolbar">
-        <div className="tabs">{["今日","本週","本月","近三個月"].map(x=><button key={x} className={range===x?"active":""} onClick={()=>setRange(x)}>{x}</button>)}</div>
-        <div className="filters"><input aria-label="搜尋" placeholder="搜尋姓名或備註..." value={query} onChange={e=>setQuery(e.target.value)}/><select value={personFilter} onChange={e=>setPersonFilter(e.target.value)}><option>全部人員</option>{people.map(p=><option key={p.id}>{p.name}</option>)}</select><button className="outline" onClick={()=>setShowSchedule(true)}>⚙ 排班設定</button><button className="primary" onClick={()=>setShowRecord(true)}>＋ 新增紀錄</button></div>
+        <div className="tabs">{["今日","本週","本月","近三個月"].map(x=><button key={x} className={range===x?"active":""} onClick={()=>{setRange(x);setPersonFilter(x==="今日"?"全部人員":people[0]?.name||"全部人員")}}>{x}</button>)}</div>
+        <div className="filters"><input aria-label="搜尋" placeholder="搜尋姓名或備註..." value={query} onChange={e=>setQuery(e.target.value)}/><select aria-label="選取人員查看紀錄" value={personFilter} onChange={e=>setPersonFilter(e.target.value)}>{range==="今日"&&<option>全部人員</option>}{people.map(p=><option key={p.id}>{p.name}</option>)}</select><button className="outline" onClick={()=>setShowSchedule(true)}>⚙ 排班設定</button><button className="primary" onClick={()=>setShowRecord(true)}>＋ 新增紀錄</button></div>
       </div>
       <div className="table-wrap"><table><thead><tr><th>日期</th><th>人員</th><th>身分</th><th>計薪排班</th><th>打卡時間</th><th>計薪工時</th><th>預估薪資</th><th>核對狀態</th><th>備註</th></tr></thead><tbody>
         {filtered.map(r=>{const p=people.find(x=>x.id===r.personId)!;const s=scheduleFor(r);const wm=workMinutes(r,s);return <tr key={r.id}><td><b>{r.date.slice(5).replace("-","/")}</b><small>星期{weekday(r.date)}</small></td><td><span className="avatar">{p.name[0]}</span><b>{p.name}</b></td><td><span className="tag">{p.role}</span></td><td>{s?<>{s.start}–{s.end}</>:<span className="warn">未設定</span>}</td><td><b>{r.clockIn}–{r.clockOut}</b>{s&&(minutes(r.clockIn)<minutes(s.start)||minutes(r.clockOut)>minutes(s.end))&&<small className="warn">超出排班不計薪</small>}</td><td><b>{fmtHours(wm)}</b></td><td><b>{money(wm/60*p.rate)}</b><small>時薪 {p.rate}</small></td><td><button className={r.confirmed?"status ok":"status"} onClick={()=>setRows(rows.map(x=>x.id===r.id?{...x,confirmed:!x.confirmed}:x))}>{r.confirmed?"✓ 已核對":"! 待核對"}</button></td><td>{r.note||"—"}</td></tr>})}
