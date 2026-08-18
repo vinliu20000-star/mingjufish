@@ -1,0 +1,1 @@
+{"name":"名桔鮮魚湯店內打卡","short_name":"名桔打卡","description":"店內動態 QR 打卡顯示器","start_url":"/mingjufish/qr/","scope":"/mingjufish/qr/","display":"standalone","orientation":"any","background_color":"#f5f1e8","theme_color":"#18322b","icons":[{"src":"/mingjufish/favicon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}
