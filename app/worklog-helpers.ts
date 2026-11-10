@@ -2,7 +2,7 @@ export type TemplateShift = { personId: number; day: number; start: string; end:
 export type ScheduleTemplate = { name: string; shifts: TemplateShift[] };
 type Shift = { id: number; personId: number; date: string; start: string; end: string };
 const min = (time: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? Number(time.slice(0, 2)) * 60 + Number(time.slice(3)) : NaN;
-type Attendance = { personId: number; date: string; clockIn: string; clockOut: string; type: string; excessApproval?: string };
+type Attendance = { personId: number; date: string; clockIn: string; clockOut: string; breakMin?: number; type: string; excessApproval?: string };
 export const EXCESS_PAY_THRESHOLD_MINUTES = 30;
 export function approvalKey(row: Attendance, schedule?: { start: string; end: string }) {
   return excessTime(row, schedule) ? JSON.stringify([row.personId,row.date,row.clockIn,row.clockOut,schedule?.start,schedule?.end]) : "";
@@ -10,6 +10,12 @@ export function approvalKey(row: Attendance, schedule?: { start: string; end: st
 export function excessApproved(row: Attendance, schedule?: { start: string; end: string }) {
   const key = approvalKey(row, schedule);
   return !!key && row.excessApproval === key;
+}
+export function actualMinutes(row: Attendance) {
+  if (row.type !== "正常") return 0;
+  const clockIn=min(row.clockIn),clockOut=min(row.clockOut),breakMin=Math.max(0,Number(row.breakMin)||0);
+  if (![clockIn,clockOut].every(Number.isFinite) || clockOut < clockIn) return 0;
+  return Math.max(0,clockOut-clockIn-breakMin);
 }
 export function payableMinutes(row: Attendance, schedule?: { start: string; end: string }) {
   if (!schedule || row.type !== "正常") return 0;

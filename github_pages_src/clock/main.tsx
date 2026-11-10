@@ -1,0 +1,2 @@
+import React from "react";import{createRoot}from"react-dom/client";import"../../app/globals.css";import"../../app/login.css";import ClockPage from"../../app/clock-page";if(typeof window!=="undefined"&&typeof document!=="undefined"){const token=new URLSearchParams(window.location.search).get("token")||"";createRoot(document.getElementById("root")!).render(token?<ClockPage token={token}/>:<main className="clock-page"><section className="clock-card"><h1>打卡連結無效</h1><p>請重新掃描店內動態 QR。</p></section></main>)}
+
