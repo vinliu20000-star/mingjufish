@@ -239,7 +239,7 @@ function WeeklyPlanner({people,rows,schedules,template,onTemplate,onApply,onEdit
     const anchor=new Date(`${dates[0]}T12:00:00`),year=anchor.getFullYear(),month=anchor.getMonth();
     const first=`${year}-${String(month+1).padStart(2,"0")}-01`,lastDate=new Date(year,month+1,0).getDate(),last=`${year}-${String(month+1).padStart(2,"0")}-${String(lastDate).padStart(2,"0")}`;
     const monthRows=rows.filter(r=>r.date>=first&&r.date<=last).sort((a,b)=>a.date.localeCompare(b.date));
-    const lines:(string|number)[][]=[["名桔鮮魚湯｜會計月工時與薪資核對表"],["月份",`${year}年${month+1}月`],["說明","實際出勤依打卡上下班時間計算；核准超時每滿 30 分鐘計薪一次，未滿的分鐘不計薪。兩者分開顯示，原始打卡時間不會被更動。"],[]];
+    const lines:(string|number)[][]=[["名桔鮮魚湯｜會計月工時與薪資核對表"],["月份",`${year}年${month+1}月`],["說明","原始打卡時間完整保留；一般工時與核准超時都以完整 30 分鐘為計薪單位，不足 30 分鐘不計薪。"],[]];
     people.forEach(person=>{
       const personRows=monthRows.filter(r=>r.personId===person.id);
       let actualTotal=0,payableTotal=0,approvedExtraMinutes=0;
