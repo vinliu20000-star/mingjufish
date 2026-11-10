@@ -4,6 +4,11 @@ type Shift = { id: number; personId: number; date: string; start: string; end: s
 const min = (time: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? Number(time.slice(0, 2)) * 60 + Number(time.slice(3)) : NaN;
 type Attendance = { personId: number; date: string; clockIn: string; clockOut: string; breakMin?: number; type: string; excessApproval?: string };
 export const EXCESS_PAY_THRESHOLD_MINUTES = 30;
+export const EXCESS_PAY_BLOCK_MINUTES = 30;
+export function roundedExcessMinutes(minutes: number) {
+  if (!Number.isFinite(minutes) || minutes < EXCESS_PAY_THRESHOLD_MINUTES) return 0;
+  return Math.floor(minutes / EXCESS_PAY_BLOCK_MINUTES) * EXCESS_PAY_BLOCK_MINUTES;
+}
 export function approvalKey(row: Attendance, schedule?: { start: string; end: string }) {
   return excessTime(row, schedule) ? JSON.stringify([row.personId,row.date,row.clockIn,row.clockOut,schedule?.start,schedule?.end]) : "";
 }
@@ -23,13 +28,13 @@ export function payableMinutes(row: Attendance, schedule?: { start: string; end:
   if (!values.every(Number.isFinite) || values[1] < values[0]) return 0;
   const regular = Math.max(0,Math.min(values[1],values[3])-Math.max(values[0],values[2]));
   const extra = excessTime(row,schedule);
-  const payableExtra = extra && extra.minutes >= EXCESS_PAY_THRESHOLD_MINUTES && excessApproved(row,schedule) ? extra.minutes : 0;
+  const payableExtra = extra && excessApproved(row,schedule) ? roundedExcessMinutes(extra.minutes) : 0;
   return regular + payableExtra;
 }
 
 export function payableExcessMinutes(row: Attendance, schedule?: { start: string; end: string }) {
   const extra = excessTime(row,schedule);
-  return extra && extra.minutes >= EXCESS_PAY_THRESHOLD_MINUTES && excessApproved(row,schedule) ? extra.minutes : 0;
+  return extra && excessApproved(row,schedule) ? roundedExcessMinutes(extra.minutes) : 0;
 }
 
 export function excessTime(row: { clockIn: string; clockOut: string; type: string }, schedule?: { start: string; end: string }) {
