@@ -78,3 +78,4 @@ export function downloadCsv(lines: (string | number)[][], filename: string) {
   const link = document.createElement("a"); link.href = url; link.download = filename; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+// 計薪規則：遲到超過 10 分鐘仍保留所有完成的半小時一般工時。
