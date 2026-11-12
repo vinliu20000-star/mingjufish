@@ -5,6 +5,8 @@ const min = (time: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time) ? Number(ti
 type Attendance = { personId: number; date: string; clockIn: string; clockOut: string; breakMin?: number; type: string; excessApproval?: string };
 export const EXCESS_PAY_THRESHOLD_MINUTES = 30;
 export const EXCESS_PAY_BLOCK_MINUTES = 30;
+export const LATE_MAKEUP_LIMIT_MINUTES = 10;
+const time = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2,"0")}:${String(minutes % 60).padStart(2,"0")}`;
 export function roundedExcessMinutes(minutes: number) {
   if (!Number.isFinite(minutes) || minutes < EXCESS_PAY_THRESHOLD_MINUTES) return 0;
   return Math.floor(minutes / EXCESS_PAY_BLOCK_MINUTES) * EXCESS_PAY_BLOCK_MINUTES;
@@ -26,7 +28,11 @@ export function payableMinutes(row: Attendance, schedule?: { start: string; end:
   if (!schedule || row.type !== "正常") return 0;
   const values = [min(row.clockIn),min(row.clockOut),min(schedule.start),min(schedule.end)];
   if (!values.every(Number.isFinite) || values[1] < values[0]) return 0;
-  const regular = Math.max(0,Math.min(values[1],values[3])-Math.max(values[0],values[2]));
+  const late = Math.max(0, values[0] - values[2]);
+  const madeUpLate = late > 0 && late <= LATE_MAKEUP_LIMIT_MINUTES && values[1] >= values[3] + late;
+  const regular = madeUpLate
+    ? Math.max(0, values[3] - values[2])
+    : Math.max(0,Math.min(values[1],values[3])-Math.max(values[0],values[2]));
   const payableRegular = Math.floor(regular / EXCESS_PAY_BLOCK_MINUTES) * EXCESS_PAY_BLOCK_MINUTES;
   const extra = excessTime(row,schedule);
   const payableExtra = extra && excessApproved(row,schedule) ? roundedExcessMinutes(extra.minutes) : 0;
@@ -40,11 +46,14 @@ export function payableExcessMinutes(row: Attendance, schedule?: { start: string
 
 export function excessTime(row: { clockIn: string; clockOut: string; type: string }, schedule?: { start: string; end: string }) {
   if (!schedule || row.type !== "正常") return null;
-  const clockIn = min(row.clockIn), clockOut = min(row.clockOut), scheduledEnd = min(schedule.end);
-  if (![clockIn, clockOut, scheduledEnd].every(Number.isFinite) || clockOut < clockIn) return null;
-  const start = Math.max(clockIn, scheduledEnd);
+  const clockIn = min(row.clockIn), clockOut = min(row.clockOut), scheduledStart = min(schedule.start), scheduledEnd = min(schedule.end);
+  if (![clockIn, clockOut, scheduledStart, scheduledEnd].every(Number.isFinite) || clockOut < clockIn) return null;
+  const late = Math.max(0, clockIn - scheduledStart);
+  const madeUpLate = late > 0 && late <= LATE_MAKEUP_LIMIT_MINUTES && clockOut >= scheduledEnd + late;
+  const overtimeStart = madeUpLate ? scheduledEnd + late : scheduledEnd;
+  const start = Math.max(clockIn, overtimeStart);
   if (clockOut <= start) return null;
-  return { start: start === clockIn ? row.clockIn : schedule.end, end: row.clockOut, minutes: clockOut - start };
+  return { start: start === clockIn ? row.clockIn : time(overtimeStart), end: row.clockOut, minutes: clockOut - start };
 }
 
 export function applyWeeklyTemplate(schedules: Shift[], template: ScheduleTemplate, dates: string[], personIds: number[], protectedKeys: string[] = []) {
